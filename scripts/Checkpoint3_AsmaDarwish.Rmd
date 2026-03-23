@@ -1,0 +1,236 @@
+---
+title: "VTPEH 6270 - Checkpoint 3"
+author: "Asma Darwish"
+date: "`r Sys.Date()`"
+output:
+  pdf_document:
+    toc: true
+    toc_depth: 1
+    number_sections: true
+  word_document:
+    toc: true
+    toc_depth: '1'
+editor_options:
+  chunk_output_type: console
+subtitle: Data Exploration
+urlcolor: blue
+---
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+# Introduction
+This report explores a dataset of COVID-19 treatment provider sites across the United States, maintained by the U.S. Department of Health and Human Services (HHS) Office of the Assistant Secretary for Preparedness and Response (ASPR). The dataset includes information on 64,236 provider locations and documents which oral antiviral treatments, Paxlovid, Lagevrio (molnupiravir), and Veklury (remdesivir), are available at each site, along with service characteristics such as telehealth availability, pharmacist prescribing authority, and patient assistance program (PAP) enrollment.
+
+This checkpoint focuses on data exploration through grouped summary statistics and comparative visualizations, with the goal of informing a focused research question about COVID-19 treatment accessibility.
+
+# Research Question and Background
+
+**Research Question:** Is telehealth availability associated with pharmacist prescribing authority at COVID-19 treatment provider sites in the United States?
+
+**Scientific Plausibility and Context:**
+
+Telehealth expanded dramatically during the COVID-19 pandemic, offering remote access to healthcare for patients who face geographic or mobility barriers.^1^ Concurrently, pharmacist prescribing authority; the ability of pharmacists to independently prescribe medications without a physician's order, was expanded in many U.S. states during the pandemic to improve access to antiviral treatments such as Paxlovid.^2^ It is scientifically plausible that provider sites offering telehealth services would also be more likely to have pharmacist prescribing authority, as both represent expanded, patient-centered care models designed to reduce barriers to treatment access.^3^ Understanding whether these two access-enhancing features co-occur could inform future public health strategies for antiviral treatment distribution.
+```{=latex}
+\begin{thebibliography}{99}
+\bibitem{Wosik2020}
+Wosik, J., Fudim, M., Cameron, B., Gellad, Z. F., Cho, A., Phinney, D., ... \& Tcheng, J. (2020). Telehealth transformation: COVID-19 and the rise of virtual care. \textit{Journal of the American Medical Informatics Association}, 27(6), 957--962. \url{https://doi.org/10.1093/jamia/ocaa067}
+
+\bibitem{Shah2022}
+Shah, P. D., Glave, C., \& Kesselheim, A. S. (2022). Expanding pharmacist prescribing authority during COVID-19: Lessons for the future. \textit{Health Affairs}, 41(1), 46--53. \url{https://pmc.ncbi.nlm.nih.gov/articles/PMC12547906/}
+
+\bibitem{Inocencio2022}
+Inocencio, T. J., Carroll, N. V., Read, E. J., \& Holdford, D. A. (2022). The impact of COVID-19 on independent community pharmacies. \textit{Journal of the American Pharmacists Association}, 62(3), 764--770. \url{https://doi.org/10.1016/j.japh.2022.01.003}
+\end{thebibliography}
+```
+
+# Data Preparation
+```{r load-data}
+# Set working directory
+setwd("/Users/asmadarwish/Desktop/Spring 2026/R/chechpoint#3")
+
+# Load data
+my_data <- read.csv("COVID-19_Treatments_20260127.csv")
+
+# Load required packages
+library(ggplot2)
+library(dplyr)
+library(janitor)
+library(knitr)
+library(tidyr)
+```
+```{r clean-data}
+# Rename to covid and remove empty columns ONCE here
+covid <- my_data
+covid <- covid[ , !is.na(names(covid)) & names(covid) != ""]
+
+# Convert key logical columns from character to factor
+covid <- covid %>%
+  mutate(
+    Is_Telehealth   = factor(Is.Telehealth.Site,
+                             levels = c("FALSE", "TRUE"),
+                             labels = c("No Telehealth", "Telehealth")),
+    Pharm_Prescribe = factor(Pharmacist.Prescribing,
+                             levels = c("FALSE", "TRUE"),
+                             labels = c("No Pharmacist Rx", "Pharmacist Rx")),
+    Has_Paxlovid    = factor(Has.Paxlovid,
+                             levels = c("FALSE", "TRUE"),
+                             labels = c("No", "Yes")),
+    Has_Lagevrio    = factor(Has.Lagevrio,
+                             levels = c("FALSE", "TRUE"),
+                             labels = c("No", "Yes")),
+    Is_PAP          = factor(Is.PAP.Site,
+                             levels = c("FALSE", "TRUE"),
+                             labels = c("No", "Yes"))
+  )
+
+# Confirm recoding
+table(covid$Is_Telehealth)
+table(covid$Pharm_Prescribe)
+```
+
+The dataset required minimal cleaning. Key binary variables were recoded from character ("TRUE"/"FALSE") to labeled factors for clarity in summaries and figures. No records were removed as all sites had complete data for the variables of interest.
+
+# Grouped Summary Statistics
+```{r summary-table}
+summary_table <- covid %>%
+  group_by(Is_Telehealth) %>%
+  summarise(
+    N                  = n(),
+    Pharmacist_Rx_n    = sum(Pharm_Prescribe == 
+    "Pharmacist Rx", na.rm = TRUE),
+    Pharmacist_Rx_pct  = round(100 * mean(Pharm_Prescribe == "Pharmacist Rx", 
+                      na.rm = TRUE), 1),
+    Has_Paxlovid_n     = sum(Has_Paxlovid == "Yes", na.rm = TRUE),
+    Has_Paxlovid_pct   = round(100 * mean(Has_Paxlovid == "Yes", na.rm = TRUE), 1),
+    Has_Lagevrio_n     = sum(Has_Lagevrio == "Yes", na.rm = TRUE),
+    Has_Lagevrio_pct   = round(100 * mean(Has_Lagevrio == "Yes", na.rm = TRUE), 1),
+    Is_PAP_n           = sum(Is_PAP == "Yes", na.rm = TRUE),
+    Is_PAP_pct         = round(100 * mean(Is_PAP == "Yes", na.rm = TRUE), 1)
+  )
+
+knitr::kable(summary_table,
+      col.names = c("Telehealth", "N",
+                    "Pharmacist Rx (n)", "Pharmacist Rx (%)",
+                    "Paxlovid (n)", "Paxlovid (%)",
+                    "Lagevrio (n)", "Lagevrio (%)",
+                    "PAP Site (n)", "PAP Site (%)"),
+      caption = "Service characteristics stratified by telehealth availability.")
+```
+
+**Interpretation:** Telehealth sites (n = 390) show strikingly higher rates of pharmacist prescribing authority compared to non-telehealth sites (n = 63,847). This suggests a strong co-occurrence of these two expanded care models. Telehealth sites also appear to differ in Paxlovid and Lagevrio availability, which warrants further visual exploration.
+
+# Comparative Visualizations
+
+## Pharmacist Prescribing by Telehealth Status
+```{r plot1, fig.cap="Proportion of COVID-19 treatment sites with pharmacist prescribing authority, stratified by telehealth availability.", fig.width=6, fig.height=5}
+prop_data <- covid %>%
+  group_by(Is_Telehealth, Pharm_Prescribe) %>%
+  summarise(n = n(), .groups = "drop") %>%
+  group_by(Is_Telehealth) %>%
+  mutate(pct = round(100 * n / sum(n), 1))
+
+ggplot(prop_data, aes(x = Is_Telehealth, y = pct, fill = Pharm_Prescribe)) +
+  geom_bar(stat = "identity", position = "stack", width = 0.25) +
+  geom_text(aes(label = paste0(pct, "%")),
+            position = position_stack(vjust = 0.5),
+            color = "white", size = 3.5, fontface = "bold") +
+  scale_fill_manual(values = c("No Pharmacist Rx" = "#B0C4DE",
+                                "Pharmacist Rx"    = "#2E6DA4")) +
+  scale_y_continuous(limits = c(0, 100),
+                     breaks = seq(0, 100, 25),
+                     labels = function(x) paste0(x, "%")) +
+  labs(
+    title    = "Pharmacist Prescribing Authority by Telehealth Status",
+    subtitle = "Percentage of sites within each telehealth group",
+    x        = NULL,
+    y        = "Percentage of Sites",
+    fill     = NULL
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    legend.position    = "bottom",
+    legend.text        = element_text(size = 10),
+    plot.title         = element_text(face = "bold", hjust = 0.5, size = 12),
+    plot.subtitle      = element_text(hjust = 0.5, color = "gray50", size = 9),
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor   = element_blank(),
+    axis.text.x        = element_text(size = 11, color = "black", face = "bold"),
+    axis.text.y        = element_text(color = "gray40")
+  )
+```
+
+Sites that offer telehealth services appear to be more likely to also have pharmacist prescribing authority compared to sites that do not offer telehealth. This makes sense because both features are ways of making healthcare more accessible to patients, so it is reasonable that the same sites would adopt both.
+
+## Drug Availability by Telehealth Status
+```{r plot2, fig.cap="Proportion of sites with each COVID-19 antiviral available, stratified by telehealth status."}
+drug_data <- covid %>%
+  group_by(Is_Telehealth) %>%
+  summarise(
+    Paxlovid = round(100 * mean(Has_Paxlovid == "Yes", na.rm = TRUE), 1),
+    Lagevrio = round(100 * mean(Has_Lagevrio == "Yes", na.rm = TRUE), 1),
+    .groups = "drop"
+  ) %>%
+  pivot_longer(cols = c(Paxlovid, Lagevrio),
+               names_to = "Drug", values_to = "Pct")
+
+ggplot(drug_data, aes(x = Drug, y = Pct, fill = Is_Telehealth)) +
+  geom_bar(stat = "identity", position = "dodge", width = 0.5) +
+  geom_text(aes(label = paste0(Pct, "%")),
+            position = position_dodge(width = 0.5),
+            vjust = -0.5, size = 3.5) +
+  scale_fill_manual(values = c("No Telehealth" = "#B0C4DE",
+                                "Telehealth"    = "#2E6DA4")) +
+  scale_y_continuous(limits = c(0, 100), labels = function(x) paste0(x, "%")) +
+  labs(
+    title = "COVID-19 Antiviral Availability by Telehealth Status",
+    x     = "Antiviral Drug",
+    y     = "Percentage of Sites",
+    fill  = "Telehealth Status"
+  ) +
+  theme_bw(base_size = 12) +
+  theme(legend.position = "bottom")
+```
+
+**Interpretation:** Telehealth sites have higher availability of both Paxlovid and Lagevrio compared to non-telehealth sites. This further supports the idea that telehealth-enabled sites may offer a broader range of COVID-19 treatment services overall, which could reflect either greater institutional capacity or targeted policy support for comprehensive care at these locations.
+
+## Publication-Quality Figure (Nature Format)
+
+```{r pub-figure, fig.width=3.5, fig.height=3, fig.cap="Pharmacist prescribing authority by telehealth status. Nature-style formatting."}
+
+pub_plot <- ggplot(prop_data %>% filter(Pharm_Prescribe == "Pharmacist Rx"),
+       aes(x = Is_Telehealth, y = pct, fill = Is_Telehealth)) +
+  geom_bar(stat = "identity", width = 0.45) +
+  geom_text(aes(label = paste0(pct, "%")), vjust = -0.5, size = 3) +
+  scale_fill_manual(values = c("No Telehealth" = "#AAAAAA",
+                                "Telehealth"    = "#2E6DA4")) +
+  labs(
+    x = "Telehealth Availability",
+    y = "Sites with Pharmacist\nPrescribing Authority (%)"
+  ) +
+  theme_classic(base_size = 8) +
+  theme(
+    legend.position  = "none",
+    axis.title       = element_text(size = 7),
+    axis.text        = element_text(size = 7),
+    plot.margin      = margin(5, 5, 5, 5)
+  ) +
+  ylim(0, max(prop_data$pct[prop_data$Pharm_Prescribe == "Pharmacist Rx"]) * 1.2)
+
+pub_plot
+
+# Save as PDF (Nature single-column width = 89mm = 3.5 inches)
+ggsave("figure1_nature.pdf", plot = pub_plot,
+       width = 3.5, height = 3, units = "in", device = "pdf")
+```
+
+The publication-quality figure was saved as `figure1_nature.pdf` following Nature's single-column figure guidelines (width = 3.5 inches, minimal theme, sans-serif font, no gridlines).
+
+
+# AI Use Disclosure Statement
+
+This document was produced with assistance from Claude to generate the visualization code, which was then reviewed and adapted by the author. 
+
+
+
+

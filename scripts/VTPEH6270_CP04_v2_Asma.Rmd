@@ -1,0 +1,391 @@
+---
+title: "VTPEH 6270 – Check Point 04: Data Simulation"
+author: "Asma Darwish"
+date: "`r Sys.Date()`"
+output:
+  pdf_document:
+    toc: true
+    toc_depth: 3
+    number_sections: true
+    latex_engine: xelatex
+---
+
+```{r install-packages, eval=FALSE, include=FALSE}
+# One-time setup — never runs automatically during knit
+install.packages("kableExtra", repos = "https://cran.r-project.org")
+tinytex::reinstall_tinytex(repository = "illinois")
+```
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE,
+                      fig.align = "center", fig.width = 5.5, fig.height = 3.5)
+library(tidyverse)
+library(knitr)
+library(dplyr)
+library(kableExtra)
+set.seed(42)
+```
+
+---
+
+# Introduction
+
+This report is part of a series of checkpoints for VTPEH 6270, building on prior
+data exploration of the U.S. COVID-19 Treatment Locator dataset.
+The dataset documents 64,236 provider locations across the United States and
+captures which oral antiviral treatments --- Paxlovid (nirmatrelvir/ritonavir),
+Lagevrio (molnupiravir), and Veklury (remdesivir) --- are available at each site,
+along with service characteristics such as telehealth availability, pharmacist
+prescribing authority, and patient assistance program (PAP) enrollment.
+
+In Checkpoint 3, data exploration revealed striking disparities between telehealth
+and non-telehealth sites: telehealth sites (n = 390, 0.6% of all sites) showed
+substantially higher rates of pharmacist prescribing authority (90.3% vs. 0.0%),
+Paxlovid availability (88.2% vs. 18.1%), and Lagevrio availability (100% vs.
+13.4%) compared to non-telehealth sites (n = 63,847). These patterns motivated a
+refined research question focused specifically on Paxlovid availability, the most
+widely used COVID-19 oral antiviral.
+
+This checkpoint focuses on **data simulation** in the context of power analyses,
+using the observed data from Checkpoint 3 to parameterize plausible biological
+and sampling scenarios for the association between telehealth status and Paxlovid
+availability.
+
+---
+
+# Objective and Approach
+
+## Specific Objective
+
+> **Research question:** Are sites that offer telehealth services more likely to
+> stock Paxlovid (nirmatrelvir/ritonavir) than sites that do not offer telehealth,
+> among U.S. COVID-19 treatment providers?
+
+## Data Description
+
+```{r load-data}
+dat <- read.csv("COVID-19_Treatments_20260127.csv", stringsAsFactors = FALSE)
+```
+
+```{r variable-table, echo=FALSE}
+var_table <- data.frame(
+  Variable    = c("Is.Telehealth.Site", "Has.Paxlovid"),
+  Type        = c("Binary / Categorical", "Binary / Categorical"),
+  Class_in_R  = c("character to logical", "character to logical"),
+  Description = c(
+    "Whether the provider offers telehealth services (TRUE/FALSE)",
+    "Whether the provider currently stocks Paxlovid (TRUE/FALSE)"
+  )
+)
+
+kable(var_table,
+      col.names = c("Variable Name", "Variable Type", "R Class", "Description"),
+      caption   = "Variables of interest for the research question.",
+      booktabs  = TRUE) %>%
+  kable_styling(latex_options = c("hold_position", "striped"), font_size = 9) %>%
+  column_spec(4, width = "6cm")
+```
+
+```{r recode}
+dat <- dat %>%
+  mutate(
+    telehealth = Is.Telehealth.Site == "TRUE",
+    paxlovid   = Has.Paxlovid       == "TRUE"
+  )
+```
+
+## Data Visualization
+
+```{r viz-barplot, fig.cap="Proportion of providers stocking Paxlovid by telehealth status.", fig.width=4, fig.height=3.2}
+dat %>%
+  group_by(telehealth) %>%
+  summarise(prop_paxlovid = mean(paxlovid), n = n(), .groups = "drop") %>%
+  mutate(telehealth_label = ifelse(telehealth, "Telehealth", "Non-Telehealth")) %>%
+  ggplot(aes(x = telehealth_label, y = prop_paxlovid, fill = telehealth_label)) +
+  geom_col(width = 0.35, show.legend = FALSE) +
+  geom_text(aes(label = paste0(round(prop_paxlovid * 100, 1), "%\n(n = ", n, ")")),
+            vjust = -0.4, size = 3) +
+  scale_fill_manual(values = c("Non-Telehealth" = "#6baed6",
+                               "Telehealth"     = "#2171b5")) +
+  scale_y_continuous(labels = scales::percent, limits = c(0, 1.1)) +
+  labs(x = NULL, y = "Proportion Stocking Paxlovid",
+       title = "Paxlovid Availability by Telehealth Status") +
+  theme_bw(base_size = 10) +
+  theme(plot.title = element_text(face = "bold", hjust = 0.5, size = 10),
+        panel.grid.major.x = element_blank())
+```
+
+## Description of Plausible Relationships
+
+Visual inspection confirms the pattern identified in Checkpoint 3: telehealth
+providers stock Paxlovid at a substantially **higher rate** than non-telehealth
+providers (approximately 88% vs. 18%). This is consistent with a positive
+association between telehealth capability and antiviral availability, likely
+reflecting that better-resourced sites with broader service capacity tend to
+offer both features. The relationship is modelled as a **difference in
+proportions** between two binary groups (telehealth status and Paxlovid
+availability):
+
+$$P(\text{Paxlovid} = 1 \mid \text{Telehealth} = 1) = p_1$$
+$$P(\text{Paxlovid} = 1 \mid \text{Telehealth} = 0) = p_0$$
+$$\text{Effect size (odds ratio)} = OR = \frac{p_1/(1-p_1)}{p_0/(1-p_0)}$$
+
+## Parameters of Interest
+
+```{r obs-params}
+# obs-params runs FIRST so p0_obs, p1_obs, OR_obs exist before param-plot uses them
+p0_obs <- mean(dat$paxlovid[!dat$telehealth])
+p1_obs <- mean(dat$paxlovid[ dat$telehealth])
+OR_obs <- (p1_obs / (1 - p1_obs)) / (p0_obs / (1 - p0_obs))
+
+cat(sprintf("p0 (non-telehealth):         %.3f\n", p0_obs))
+cat(sprintf("p1 (telehealth):             %.3f\n", p1_obs))
+cat(sprintf("Odds Ratio:                  %.2f\n",  OR_obs))
+
+prop_tele_obs <- mean(dat$telehealth)
+cat(sprintf("Proportion telehealth sites: %.4f\n", prop_tele_obs))
+```
+
+```{r param-plot, echo=FALSE, fig.width=5.5, fig.height=3, fig.cap="Observed model parameters estimated from the HHS COVID-19 Treatment Locator dataset (n = 64,237 sites, January 2026). OR = odds ratio; divided by 100 for display on a shared axis."}
+
+param_plot_data <- data.frame(
+  label    = c("p0  (Non-Telehealth)", "p1  (Telehealth)", "OR  (scaled x0.01)"),
+  value    = c(p0_obs, p1_obs, OR_obs / 100),
+  display  = c(sprintf("%.3f", p0_obs),
+               sprintf("%.3f", p1_obs),
+               sprintf("OR = %.1f", OR_obs)),
+  category = c("Probability", "Probability", "Effect Size"),
+  stringsAsFactors = FALSE
+)
+
+param_plot_data$label <- factor(param_plot_data$label,
+                                 levels = c("OR  (scaled x0.01)",
+                                            "p1  (Telehealth)",
+                                            "p0  (Non-Telehealth)"))
+
+ggplot(param_plot_data,
+       aes(x = value, y = label, color = category, shape = category)) +
+  geom_vline(xintercept = 0, color = "grey80", linewidth = 0.4) +
+  geom_segment(aes(x = 0, xend = value, yend = label),
+               linewidth = 0.7, alpha = 0.55) +
+  geom_point(size = 4.5) +
+  geom_text(aes(label = display),
+            hjust = -0.2, size = 3, color = "black") +
+  scale_color_manual(values = c("Probability" = "#2171b5",
+                                "Effect Size"  = "#cb181d"),
+                     name   = NULL) +
+  scale_shape_manual(values = c("Probability" = 16,
+                                "Effect Size"  = 17),
+                     name   = NULL) +
+  scale_x_continuous(limits = c(0, 1.35),
+                     breaks = c(0, 0.25, 0.50, 0.75, 1.0),
+                     labels = c("0", "0.25", "0.50", "0.75", "1.0")) +
+  labs(
+    x     = "Estimated Value  (OR divided by 100 for display)",
+    y     = NULL,
+    title = "Observed Parameter Estimates"
+  ) +
+  theme_classic(base_size = 10) +
+  theme(
+    plot.title         = element_text(face = "bold", size = 10, hjust = 0),
+    axis.text.y        = element_text(size = 9,  color = "black"),
+    axis.text.x        = element_text(size = 8,  color = "grey30"),
+    axis.title.x       = element_text(size = 8,  color = "grey30"),
+    axis.line          = element_line(color = "grey60", linewidth = 0.4),
+    axis.ticks         = element_line(color = "grey60"),
+    legend.position    = c(0.80, 0.25),
+    legend.text        = element_text(size = 8),
+    legend.key.size    = unit(0.4, "cm"),
+    legend.background  = element_rect(fill  = "white",
+                                      color = "grey85",
+                                      linewidth = 0.3),
+    panel.grid.major.x = element_line(color = "grey92", linewidth = 0.3),
+    plot.margin        = margin(8, 40, 8, 8)
+  )
+```
+
+---
+
+# Simulation
+
+## Simulation Basis
+
+The simulation generates binary outcomes for two groups (telehealth vs.
+non-telehealth) under a logistic model. Group membership is drawn randomly, and
+Paxlovid availability is drawn from Bernoulli distributions with probabilities
+$p_0$ (non-telehealth) and $p_1$ (telehealth), derived from the observed data
+in Checkpoint 3.
+
+```{r sim-helpers}
+# Helper: convert OR + p0 to p1
+or_to_p1 <- function(p0, OR) {
+  odds0 <- p0 / (1 - p0)
+  odds1 <- odds0 * OR
+  odds1 / (1 + odds1)
+}
+
+# Summary statistics: proportions stocking Paxlovid by telehealth group
+sim_summary <- function(df) {
+  df %>%
+    group_by(telehealth) %>%
+    summarise(n             = n(),
+              n_paxlovid    = sum(paxlovid),
+              prop_paxlovid = mean(paxlovid),
+              .groups = "drop")
+}
+```
+
+## Simulation Function
+
+```{r sim-function}
+#' Simulate COVID-19 Paxlovid availability data and return summary statistics.
+#' @param n          Total sample size
+#' @param OR         Odds ratio (effect size); OR = 1 means no association
+#' @param noise      SD of log-odds noise added to baseline probability
+#' @param p0         Baseline probability of Paxlovid at non-telehealth sites
+#' @param prop_tele  Proportion of sites that are telehealth
+#' @return           A list with `data` (raw data frame) and `summary` (summary stats)
+simulate_paxlovid <- function(n, OR, noise, p0 = 0.18, prop_tele = prop_tele_obs) {
+  p0_noisy <- plogis(qlogis(p0) + rnorm(1, 0, noise))
+  p0_noisy <- pmax(0.01, pmin(0.99, p0_noisy))
+  p1       <- or_to_p1(p0_noisy, OR)
+
+  telehealth <- rbinom(n, 1, prop_tele)
+  paxlovid   <- ifelse(telehealth == 1,
+                       rbinom(n, 1, p1),
+                       rbinom(n, 1, p0_noisy))
+  df <- data.frame(telehealth = as.logical(telehealth),
+                   paxlovid   = as.logical(paxlovid))
+  list(data    = df,
+       summary = sim_summary(df))
+}
+```
+
+## Simulation Output
+
+```{r sim-output}
+example_sim <- simulate_paxlovid(n = 1000, OR = 30, noise = 0)
+kable(example_sim$summary, digits = 3,
+      caption  = "Example simulation output (n = 1000, OR = 30).",
+      booktabs = TRUE) %>%
+  kable_styling(latex_options = "hold_position", font_size = 9)
+```
+
+## Simulation Automation
+
+```{r sim-automation, cache=TRUE}
+effect_sizes <- c(1, 2, 3, 5, 8, 12, 20, 30, 50, 80)
+sample_sizes <- c(100, 300, 500, 1000, 2000, 5000,
+                  10000, 20000, 40000, 64000)
+noise_levels <- c(0, 0.5, 1.5)
+
+sim_grid <- expand.grid(n     = sample_sizes,
+                        OR    = effect_sizes,
+                        noise = noise_levels)
+
+set.seed(42)
+sim_results <- vector("list", nrow(sim_grid))
+for (i in seq_len(nrow(sim_grid))) {
+  sim_results[[i]] <- simulate_paxlovid(
+    n     = sim_grid$n[i],
+    OR    = sim_grid$OR[i],
+    noise = sim_grid$noise[i]
+  )
+}
+
+cat(sprintf("Total simulations run: %d\n", length(sim_results)))
+```
+
+---
+
+# Visualization
+
+```{r viz-simulation, fig.width=7, fig.height=3.8, fig.cap="Simulated proportion of telehealth sites stocking Paxlovid across effect sizes and sample sizes, faceted by noise level. Higher OR = larger true effect; larger n = more stable estimates."}
+
+extract_tele_prop <- function(sim_list) {
+  s   <- sim_list$summary
+  row <- s[s$telehealth == TRUE, ]
+  if (nrow(row) == 0) return(NA_real_)
+  row$prop_paxlovid
+}
+
+sim_grid$prop_tele <- sapply(sim_results, extract_tele_prop)
+n_missing <- sum(is.na(sim_grid$prop_tele))
+if (n_missing > 0)
+  message(sprintf("Note: %d runs had no telehealth sites and are omitted.", n_missing))
+
+sim_grid$noise_label <- factor(paste0("Noise SD = ", sim_grid$noise),
+                                levels = paste0("Noise SD = ", noise_levels))
+sim_grid$n_label <- factor(sim_grid$n)
+
+ggplot(sim_grid, aes(x = factor(OR), y = prop_tele,
+                     color = n_label, group = n_label)) +
+  geom_line(alpha = 0.5, linewidth = 0.4) +
+  geom_point(size = 0.9, alpha = 0.7, na.rm = TRUE) +
+  facet_wrap(~ noise_label, ncol = 3) +
+  scale_color_viridis_d(name = "n", option = "C",
+                        guide = guide_legend(nrow = 1,
+                                             override.aes = list(size = 2,
+                                                                 linewidth = 0.8))) +
+  scale_y_continuous(labels = scales::percent, limits = c(0, 1),
+                     breaks = c(0, 0.5, 1)) +
+  labs(
+    x     = "Odds Ratio",
+    y     = "Prop. Stocking Paxlovid\n(Telehealth Sites)",
+    title = "Simulation: OR, Sample Size, and Noise vs. Paxlovid Availability"
+  ) +
+  theme_bw(base_size = 9) +
+  theme(legend.position  = "bottom",
+        legend.key.size  = unit(0.3, "cm"),
+        legend.text      = element_text(size = 6.5),
+        legend.title     = element_text(size = 7, face = "bold"),
+        legend.spacing.x = unit(0.15, "cm"),
+        strip.background = element_rect(fill = "#deebf7"),
+        strip.text       = element_text(size = 8),
+        axis.text.x      = element_text(size = 6.5, angle = 45, hjust = 1),
+        axis.text.y      = element_text(size = 7),
+        axis.title       = element_text(size = 8),
+        plot.title       = element_text(face = "bold", size = 8.5, hjust = 0.5),
+        panel.spacing    = unit(0.4, "cm"))
+```
+
+---
+
+# Interpretation
+
+The simulations revealed several important patterns:
+
+**Effect of the odds ratio:** As the OR increases from 1 (no association) to 80,
+the simulated proportion of telehealth sites stocking Paxlovid rises rapidly and
+approaches a plateau near 100% for high OR values. This plateau reflects that
+probabilities are bounded between 0 and 1, a key constraint in binary outcome
+modeling. The steep rise occurs between OR = 3 and OR = 20, confirming that the
+observed OR (~30 in the real data) represents a very strong association.
+
+**Effect of sample size:** At small sample sizes (n $\leq$ 500), estimates are
+highly variable --- particularly for telehealth sites which are rare (~0.6% of the
+sample per the Checkpoint 3 data), meaning many simulations yield zero telehealth
+observations. As sample size grows toward the observed 64,237, estimates stabilize
+and converge on the true parameter values. This underscores the importance of
+adequate sample size when studying rare exposures.
+
+**Effect of noise:** Increasing the noise parameter (log-odds SD = 0.5, 1.5)
+introduces variability in the baseline probability $p_0$, which propagates to $p_1$
+and widens the spread of simulated proportions. At high noise (SD = 1.5), even
+large sample sizes show non-trivial variability, reflecting real-world
+heterogeneity among provider sites. For power analyses, this suggests that
+accounting for site-level noise is critical to avoid overestimating statistical
+power.
+
+**Implications for power analysis:** Future simulations (Final Report) should
+prioritize sample sizes in the range of 1,000--10,000, as power will likely
+plateau at larger n. Given the very large observed effect size, even moderate
+sample sizes may be sufficient to detect the association --- but rare exposure
+prevalence requires careful consideration of the expected number of telehealth
+sites in any sub-sample.
+
+---
+
+# AI Use Disclosure Statement
+
+Claude was used to assist in generating the R code for visualization. 
