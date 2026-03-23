@@ -1,18 +1,18 @@
 # VTPEH 6270 - Check Point 05
 
 ## Project Description
-Brief description of your project here.
+This project explores COVID-19 treatment accessibility across U.S. provider sites which focuses on the association between telehealth availability and Paxlovid stocking.
 
 ## Author
-- Name: Your Full Name
+- Name: Asma Darwish
 - Affiliation: Cornell University
-- Contact: your@email.com
+- Contact: ad2465@cornell.edu
 
 ## Research Question
-Write your research question here.
+Are sites that offer telehealth services more likely to stock Paxlovid than sites that do not, among U.S. COVID-19 treatment providers?
 
 ## Data Source
-Describe your data source here.
+U.S. Department of Health and Human Services (HHS) COVID-19 Treatment Locator dataset. Contains 64,236 provider locations adn doccuments antiviral treatment availability and service characteristics.
 
 ## Repository Structure
 - `data/raw/` - Original unprocessed data
@@ -22,7 +22,7 @@ Describe your data source here.
 - `output/reports/` - Generated reports
 
 ## AI Tool Disclosure
-Claude (Anthropic) was used to assist with GitHub setup and repository structure.
+Claude was used to assist with GitHub setup and repository structure.
 
 ## References
-Add references here.
+
